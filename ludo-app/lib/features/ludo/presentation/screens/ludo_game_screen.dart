@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../../../../models/ludo_models.dart';
 import '../../../../providers/game_provider.dart';
 import '../../../../services/sound_service.dart';
+import '../../../../services/ludo_game_logic.dart';
 import '../../../../widgets/ludo_painters.dart';
 
 class LudoGameScreen extends StatefulWidget {
@@ -53,6 +54,7 @@ class _LudoGameScreenState extends State<LudoGameScreen>
   List<Map<String, dynamic>> _activeKilledTokens = [];
   List<Map<String, dynamic>> _activeSpawnedTokens = [];
   int _initialDiceValue = 1;
+  int _randomDiceValue = 1;
   bool _isAutoRollingDice = false;
   bool _isAutoMovingToken = false;
 
@@ -75,10 +77,15 @@ class _LudoGameScreenState extends State<LudoGameScreen>
     final double speedMultiplier = 2.0 - (widget.moveSpeed - 0.2) * 2.125;
 
     _diceAnimationController = AnimationController(
-      duration: Duration(milliseconds: (800 * speedMultiplier).clamp(100.0, 3000.0).toInt()),
+      duration: const Duration(milliseconds: 600),
       vsync: this,
     );
     _diceAnimationController.addListener(() {
+      if (_diceAnimationController.isAnimating) {
+        setState(() {
+          _randomDiceValue = Random().nextInt(6) + 1;
+        });
+      }
       if (_diceRollMode == DiceRollMode.fling && _flingVelocity != Offset.zero) {
         final t = _diceAnimationController.value;
         final dt = t - _lastAnimationValue;
@@ -238,17 +245,40 @@ class _LudoGameScreenState extends State<LudoGameScreen>
       }
     }
 
-    // Play dice animation when server rolled dice
+    // Play dice animation when server rolled dice or AI rolls
     if (lm != null && lm['diceRoll'] != null) {
       try {
         final dr = lm['diceRoll'] as Map<String, dynamic>;
         final int val = dr['diceValue'] as int? ?? 0;
+        final String playerId = dr['playerId'] as String? ?? '';
+        
+        // Only trigger animation if this event is new and we're not already animating
+        final bool isOnline = widget.gameMode == GameMode.online;
+        final bool isAI = prov.gameState?.players.any((p) => p.id == playerId && p.type == PlayerType.ai) ?? false;
+        
         if (val > 0) {
           _initialDiceValue = val;
         }
-        // play dice animation and sound
-        _diceAnimationController.forward(from: 0);
-        context.read<SoundService>().playSound(GameSound.diceRoll);
+
+        if ((isOnline || isAI) && !_diceAnimationController.isAnimating) {
+          // If in Fling mode, give AI a random fling velocity
+          if (_diceRollMode == DiceRollMode.fling) {
+            final random = Random();
+            setState(() {
+              _flingVelocity = Offset(
+                random.nextDouble() * 3000 - 1500,
+                random.nextDouble() * 3000 - 1500,
+              );
+              // Start from a random position for AI fling
+              final boardSize = min(MediaQuery.of(context).size.width, MediaQuery.of(context).size.height * 0.75);
+              _diceLeft = random.nextDouble() * (boardSize - 60);
+              _diceTop = random.nextDouble() * (boardSize - 60);
+            });
+          }
+
+          _diceAnimationController.forward(from: 0);
+          context.read<SoundService>().playSound(GameSound.diceRoll);
+        }
       } catch (e) {}
     }
 
@@ -363,33 +393,50 @@ class _LudoGameScreenState extends State<LudoGameScreen>
         });
       }
 
-      // Auto-move single token for local human player
+      // Smart Auto-move for local human player
       if (isLocalPlayerTurn && state.diceRolled && state.canMove && !_isAutoMovingToken) {
         final movableTokens = prov.getMovableTokens();
-        final uniquePositions = movableTokens.map((t) => t.position).toSet();
+        
+        // Auto-move ONLY if there is exactly one movable token
+        if (movableTokens.length == 1) {
+          final token = movableTokens.first;
+          final dice = state.diceValue;
+          final allPlayers = state.players;
+          final rules = state.rules;
 
-        if (uniquePositions.length == 1) {
-          _isAutoMovingToken = true;
-          // Wait 900ms to let the dice animation finish
-          Future.delayed(const Duration(milliseconds: 900), () async {
-            if (mounted) {
-              final currentProv = context.read<GameProvider>();
-              final currentState = currentProv.gameState;
-              if (currentState != null &&
-                  currentState.isPlaying &&
-                  currentState.currentPlayer.id == currentPlayer.id &&
-                  currentState.diceRolled &&
-                  currentState.canMove) {
-                
-                final currentMovable = currentProv.getMovableTokens();
-                if (currentMovable.isNotEmpty) {
-                  await currentProv.moveToken(currentMovable.first);
-                  context.read<SoundService>().playSound(GameSound.tokenMove);
+          // Check if this move is a "Capture" or a "Spawn"
+          // We DO NOT auto-move in these cases so the player can choose/see the action
+          final isCapture = LudoGameLogic.canTokenCapture(
+            token, 
+            dice, 
+            allPlayers, 
+            rules: rules, 
+            hasCaptured: currentPlayer.hasCaptured
+          );
+          final isSpawn = token.position == -1;
+
+          if (!isCapture && !isSpawn) {
+            _isAutoMovingToken = true;
+            Future.delayed(const Duration(milliseconds: 900), () async {
+              if (mounted) {
+                final currentProv = context.read<GameProvider>();
+                final currentState = currentProv.gameState;
+                if (currentState != null &&
+                    currentState.isPlaying &&
+                    currentState.currentPlayer.id == currentPlayer.id &&
+                    currentState.diceRolled &&
+                    currentState.canMove) {
+                  
+                  final currentMovable = currentProv.getMovableTokens();
+                  if (currentMovable.length == 1 && 
+                      currentMovable.first.id == token.id) {
+                    await currentProv.moveToken(currentMovable.first);
+                  }
                 }
+                _isAutoMovingToken = false;
               }
-              _isAutoMovingToken = false;
-            }
-          });
+            });
+          }
         }
       }
     }
@@ -716,7 +763,12 @@ class _LudoGameScreenState extends State<LudoGameScreen>
   }
 
   Widget _buildDiceFace(int value, Color dotColor) {
-    final displayValue = value > 0 ? value : _initialDiceValue;
+    final int displayValue;
+    if (_diceAnimationController.isAnimating) {
+      displayValue = _randomDiceValue;
+    } else {
+      displayValue = value > 0 ? value : _initialDiceValue;
+    }
 
     return Padding(
       padding: const EdgeInsets.all(10.0), // Generous padding for dots
@@ -745,7 +797,8 @@ class _LudoGameScreenState extends State<LudoGameScreen>
   Widget _buildCenterDice(GameProvider gameProvider, double boardSize) {
     final canRoll = gameProvider.currentPlayer?.type == PlayerType.human &&
         !gameProvider.diceRolled &&
-        !gameProvider.awaitingServer;
+        !gameProvider.awaitingServer &&
+        !_diceAnimationController.isAnimating; // Prevent double tap during animation
 
     final currentColor = gameProvider.currentPlayer?.color;
     Color diceColor;
@@ -1088,9 +1141,15 @@ class _LudoGameScreenState extends State<LudoGameScreen>
   // Removed old token panels and unused builders
 
   void _onDiceRoll(GameProvider gameProvider) {
+    if (_diceAnimationController.isAnimating) return;
+
     _lastAnimationValue = 0.0;
     // Play dice animation
-    _diceAnimationController.forward(from: 0);
+    _diceAnimationController.forward(from: 0).then((_) {
+      // Roll dice logic in provider is called immediately, 
+      // but UI shows result after animation
+      setState(() {});
+    });
 
     // Play sound
     context.read<SoundService>().playSound(GameSound.diceRoll);
@@ -1113,60 +1172,106 @@ class _LudoGameScreenState extends State<LudoGameScreen>
   }
 
   Widget _buildGameOverScreen(GameProvider gameProvider) {
-    final winner = gameProvider.winner;
+    final winnerIds = gameProvider.gameState?.winnerIds ?? [];
+    final players = gameProvider.gameState?.players ?? [];
 
     return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.celebration,
-            size: 100,
-            color: _getPlayerColorValue(winner?.color ?? PlayerColor.red),
-          ),
-          const SizedBox(height: 20),
-          Text(
-            '${winner?.name} Wins!',
-            style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 40),
-          ElevatedButton(
-            onPressed: () {
-              gameProvider.resetGame();
-              // Navigate back
-              Navigator.pop(context);
-            },
-            style: ElevatedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 16),
-              backgroundColor: Colors.green,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 30),
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(24),
+          boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 10)],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.emoji_events, size: 80, color: Colors.orange),
+            const SizedBox(height: 16),
+            const Text(
+              'Game Finished!',
+              style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 20),
+            const Text(
+              'Rankings:',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w500, color: Colors.grey),
+            ),
+            const SizedBox(height: 12),
+            ...List.generate(winnerIds.length, (index) {
+              final player = players.firstWhere((p) => p.id == winnerIds[index]);
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      '${index + 1}. ',
+                      style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                    ),
+                    Container(
+                      width: 16,
+                      height: 16,
+                      decoration: BoxDecoration(
+                        color: _getPlayerColorValue(player.color),
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      player.name,
+                      style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                    ),
+                  ],
+                ),
+              );
+            }),
+            // Add those who haven't finished
+            ...players.where((p) => !winnerIds.contains(p.id)).map((player) {
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Text('- ', style: TextStyle(fontSize: 18, color: Colors.grey)),
+                    Container(
+                      width: 12,
+                      height: 12,
+                      decoration: BoxDecoration(
+                        color: _getPlayerColorValue(player.color).withOpacity(0.5),
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      player.name,
+                      style: const TextStyle(fontSize: 18, color: Colors.grey),
+                    ),
+                  ],
+                ),
+              );
+            }).toList(),
+            const SizedBox(height: 30),
+            ElevatedButton(
+              onPressed: () {
+                gameProvider.resetGame();
+                Navigator.pop(context);
+              },
+              style: ElevatedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 16),
+                backgroundColor: Colors.green,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              child: const Text(
+                'Back to Menu',
+                style: TextStyle(fontSize: 18, color: Colors.white),
               ),
             ),
-            child: const Text(
-              'Play Again',
-              style: TextStyle(fontSize: 18, color: Colors.white),
-            ),
-          ),
-          const SizedBox(height: 16),
-          ElevatedButton(
-            onPressed: () {
-              gameProvider.resetGame();
-              Navigator.pop(context);
-            },
-            style: ElevatedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 16),
-              backgroundColor: Colors.grey,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
-            child: const Text(
-              'Back to Menu',
-              style: TextStyle(fontSize: 18, color: Colors.white),
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

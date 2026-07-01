@@ -20,12 +20,13 @@ class LudoHomeScreen extends StatefulWidget {
 class _LudoHomeScreenState extends State<LudoHomeScreen>
     with SingleTickerProviderStateMixin {
   late AnimationController _animationController;
+  late PageController _boardPageController;
   bool _navigating = false;
   final List<PlayerColor> _slotColors = const [
     PlayerColor.yellow, // Top Left (matching board image)
-    PlayerColor.green,  // Top Right
-    PlayerColor.blue,   // Bottom Left
-    PlayerColor.red,    // Bottom Right
+    PlayerColor.green, // Top Right
+    PlayerColor.blue, // Bottom Left
+    PlayerColor.red, // Bottom Right
   ];
   late List<_PlayerSlotType> _playerSlots;
   late List<String> _playerNames;
@@ -46,7 +47,8 @@ class _LudoHomeScreenState extends State<LudoHomeScreen>
       _PlayerSlotType.computer,
       _PlayerSlotType.none,
     ];
-    _playerNames = ['Player 1', 'Player 2', 'Player 3', 'Player 4'];
+    _playerNames = ['Yellow Player', 'Green Player', 'Blue Player', 'Red Player'];
+    _boardPageController = PageController(initialPage: _selectedBoardIndex);
     _animationController = AnimationController(
       duration: const Duration(seconds: 2),
       vsync: this,
@@ -55,6 +57,7 @@ class _LudoHomeScreenState extends State<LudoHomeScreen>
 
   @override
   void dispose() {
+    _boardPageController.dispose();
     _animationController.dispose();
     super.dispose();
   }
@@ -304,10 +307,15 @@ class _LudoHomeScreenState extends State<LudoHomeScreen>
                               decoration: BoxDecoration(
                                 color: const Color(0xFFFFC233),
                                 shape: BoxShape.circle,
-                                border: Border.all(color: Colors.white, width: 2),
-                                boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 4)],
+                                border:
+                                    Border.all(color: Colors.white, width: 2),
+                                boxShadow: const [
+                                  BoxShadow(
+                                      color: Colors.black26, blurRadius: 4)
+                                ],
                               ),
-                              child: const Icon(Icons.edit, color: Colors.white, size: 16),
+                              child: const Icon(Icons.edit,
+                                  color: Colors.white, size: 16),
                             ),
                           ),
                         ],
@@ -355,24 +363,51 @@ class _LudoHomeScreenState extends State<LudoHomeScreen>
                 const SizedBox(height: 8),
                 _buildStartCoinsRow(),
                 _buildRuleRow(
-                  '1 also gives another turn',
-                  _rules.extraTurnOnOne,
+                  '${_openingDiceValue} also gives another turn',
+                  _rules.startCoinsInBase
+                      ? _rules.extraTurnOnSix
+                      : _rules.extraTurnOnOne,
                   onTap: () => _setRules(
-                    _rules.copyWith(extraTurnOnOne: !_rules.extraTurnOnOne),
+                    _rules.copyWith(
+                      extraTurnOnOne: _rules.startCoinsInBase
+                          ? _rules.extraTurnOnOne
+                          : !_rules.extraTurnOnOne,
+                      extraTurnOnSix: _rules.startCoinsInBase
+                          ? !_rules.extraTurnOnSix
+                          : _rules.extraTurnOnSix,
+                    ),
                   ),
                 ),
                 _buildRuleRow(
-                  '6 also gives another turn',
-                  _rules.extraTurnOnSix,
+                  '${_penaltyDiceValue} also gives another turn',
+                  _rules.startCoinsInBase
+                      ? _rules.extraTurnOnOne
+                      : _rules.extraTurnOnSix,
                   onTap: () => _setRules(
-                    _rules.copyWith(extraTurnOnSix: !_rules.extraTurnOnSix),
+                    _rules.copyWith(
+                      extraTurnOnOne: _rules.startCoinsInBase
+                          ? !_rules.extraTurnOnOne
+                          : _rules.extraTurnOnOne,
+                      extraTurnOnSix: _rules.startCoinsInBase
+                          ? _rules.extraTurnOnSix
+                          : !_rules.extraTurnOnSix,
+                    ),
                   ),
                 ),
                 _buildRuleRow(
-                  '6 also brings a coin out',
-                  _rules.openTokenOnSix,
+                  '${_openingDiceValue} also brings a coin out',
+                  _rules.startCoinsInBase
+                      ? _rules.openTokenOnSix
+                      : _rules.openTokenOnOne,
                   onTap: () => _setRules(
-                    _rules.copyWith(openTokenOnSix: !_rules.openTokenOnSix),
+                    _rules.copyWith(
+                      openTokenOnOne: _rules.startCoinsInBase
+                          ? _rules.openTokenOnOne
+                          : !_rules.openTokenOnOne,
+                      openTokenOnSix: _rules.startCoinsInBase
+                          ? !_rules.openTokenOnSix
+                          : _rules.openTokenOnSix,
+                    ),
                   ),
                 ),
                 _buildRuleRow(
@@ -383,7 +418,7 @@ class _LudoHomeScreenState extends State<LudoHomeScreen>
                   ),
                 ),
                 _buildRuleRow(
-                  '3 consecutive rolls of 1 cuts one own coin',
+                  '3 consecutive rolls of $_penaltyDiceValue cuts one own coin',
                   _rules.threeConsecutiveOnesCutOwnCoin,
                   onTap: () => _setRules(
                     _rules.copyWith(
@@ -393,7 +428,7 @@ class _LudoHomeScreenState extends State<LudoHomeScreen>
                   ),
                 ),
                 _buildRuleRow(
-                  'Skip a turn on 3 consecutive rolls of 1',
+                  'Skip a turn on 3 consecutive rolls of $_penaltyDiceValue',
                   _rules.skipTurnAfterThreeOnes,
                   onTap: () => _setRules(
                     _rules.copyWith(
@@ -402,7 +437,7 @@ class _LudoHomeScreenState extends State<LudoHomeScreen>
                   ),
                 ),
                 _buildRuleRow(
-                  '3 consecutive rolls of 6 brings a coin out',
+                  '3 consecutive rolls of ${_openingDiceValue} brings a coin out',
                   _rules.threeConsecutiveSixesBringCoinOut,
                   onTap: () => _setRules(
                     _rules.copyWith(
@@ -415,7 +450,8 @@ class _LudoHomeScreenState extends State<LudoHomeScreen>
                   'Gains another turn on cutting a coin',
                   _rules.extraTurnOnCapture,
                   onTap: () => _setRules(
-                    _rules.copyWith(extraTurnOnCapture: !_rules.extraTurnOnCapture),
+                    _rules.copyWith(
+                        extraTurnOnCapture: !_rules.extraTurnOnCapture),
                   ),
                 ),
                 _buildRuleRow(
@@ -430,7 +466,8 @@ class _LudoHomeScreenState extends State<LudoHomeScreen>
                   _rules.mustCaptureToEnterHome,
                   showHelp: true,
                   onTap: () => _setRules(
-                    _rules.copyWith(mustCaptureToEnterHome: !_rules.mustCaptureToEnterHome),
+                    _rules.copyWith(
+                        mustCaptureToEnterHome: !_rules.mustCaptureToEnterHome),
                   ),
                 ),
                 _buildRuleRow(
@@ -438,15 +475,25 @@ class _LudoHomeScreenState extends State<LudoHomeScreen>
                   _rules.mustCutIfCuttable,
                   showHelp: true,
                   onTap: () => _setRules(
-                    _rules.copyWith(mustCutIfCuttable: !_rules.mustCutIfCuttable),
+                    _rules.copyWith(
+                        mustCutIfCuttable: !_rules.mustCutIfCuttable),
                   ),
                 ),
                 _buildRuleRow(
-                  'Must bring a coin out on 1',
-                  _rules.openTokenOnOne,
+                  'Must bring a coin out on $_openingDiceValue',
+                  _rules.startCoinsInBase
+                      ? _rules.openTokenOnSix
+                      : _rules.openTokenOnOne,
                   showHelp: true,
                   onTap: () => _setRules(
-                    _rules.copyWith(openTokenOnOne: !_rules.openTokenOnOne),
+                    _rules.copyWith(
+                      openTokenOnOne: !_rules.startCoinsInBase
+                          ? !_rules.openTokenOnOne
+                          : _rules.openTokenOnOne,
+                      openTokenOnSix: _rules.startCoinsInBase
+                          ? !_rules.openTokenOnSix
+                          : _rules.openTokenOnSix,
+                    ),
                   ),
                 ),
                 _buildRuleRow(
@@ -475,7 +522,7 @@ class _LudoHomeScreenState extends State<LudoHomeScreen>
         itemBuilder: (context, index) {
           final isSelected = _selectedBoardIndex == index;
           final theme = LudoBoardTheme.themes[index];
-          
+
           // Create a dummy game state for the painter to show base UI with current rules
           final dummyGameState = GameState(
             id: 'preview',
@@ -499,7 +546,9 @@ class _LudoHomeScreenState extends State<LudoHomeScreen>
                 borderRadius: BorderRadius.circular(12),
                 boxShadow: [
                   BoxShadow(
-                    color: isSelected ? const Color(0xFFFFC233).withOpacity(0.4) : Colors.black.withOpacity(0.1),
+                    color: isSelected
+                        ? const Color(0xFFFFC233).withOpacity(0.4)
+                        : Colors.black.withOpacity(0.1),
                     blurRadius: isSelected ? 8 : 4,
                     offset: const Offset(0, 2),
                   )
@@ -524,17 +573,18 @@ class _LudoHomeScreenState extends State<LudoHomeScreen>
                       ),
                     ),
                   ),
-                  
+
                   // Selection Overlay
                   if (isSelected)
                     Container(
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: const Color(0xFFFFC233), width: 3),
+                        border: Border.all(
+                            color: const Color(0xFFFFC233), width: 3),
                         color: Colors.white.withOpacity(0.1),
                       ),
                     ),
-                  
+
                   // Board Style Icon Overlay
                   Positioned(
                     top: 4,
@@ -542,18 +592,22 @@ class _LudoHomeScreenState extends State<LudoHomeScreen>
                     child: Container(
                       padding: const EdgeInsets.all(3),
                       decoration: BoxDecoration(
-                        color: isSelected ? const Color(0xFFFFC233) : Colors.black54,
+                        color: isSelected
+                            ? const Color(0xFFFFC233)
+                            : Colors.black54,
                         shape: BoxShape.circle,
                         border: Border.all(color: Colors.white, width: 1),
                       ),
                       child: Icon(
-                        theme.style == BoardStyle.sketchy ? Icons.brush : Icons.grid_view,
+                        theme.style == BoardStyle.sketchy
+                            ? Icons.brush
+                            : Icons.grid_view,
                         color: Colors.white,
                         size: 10,
                       ),
                     ),
                   ),
-                  
+
                   // Bottom Label
                   Positioned(
                     bottom: 0,
@@ -561,7 +615,9 @@ class _LudoHomeScreenState extends State<LudoHomeScreen>
                     right: 0,
                     child: Container(
                       decoration: BoxDecoration(
-                        color: isSelected ? const Color(0xFFFFC233) : Colors.black45,
+                        color: isSelected
+                            ? const Color(0xFFFFC233)
+                            : Colors.black45,
                         borderRadius: const BorderRadius.only(
                           bottomLeft: Radius.circular(12),
                           bottomRight: Radius.circular(12),
@@ -569,7 +625,9 @@ class _LudoHomeScreenState extends State<LudoHomeScreen>
                       ),
                       padding: const EdgeInsets.symmetric(vertical: 2),
                       child: Text(
-                        theme.style == BoardStyle.sketchy ? 'Sketchy' : 'Modern',
+                        theme.style == BoardStyle.sketchy
+                            ? 'Sketchy'
+                            : 'Modern',
                         textAlign: TextAlign.center,
                         style: const TextStyle(
                           color: Colors.white,
@@ -589,7 +647,6 @@ class _LudoHomeScreenState extends State<LudoHomeScreen>
   }
 
   Widget _buildBoardPreviewForHomeMini() {
-    final theme = LudoBoardTheme.themes[_selectedBoardIndex];
     final dummyGameState = GameState(
       id: 'preview',
       players: [
@@ -603,46 +660,55 @@ class _LudoHomeScreenState extends State<LudoHomeScreen>
       rules: _rules,
     );
 
-    return GestureDetector(
-      onTap: () {
-        setState(() {
-          _selectedBoardIndex = (_selectedBoardIndex + 1) % LudoBoardTheme.themes.length;
-        });
-      },
-      child: Stack(
-        children: [
-          Container(
-            height: 68,
-            width: 68,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: const Color(0xFFFFC233), width: 2),
-            ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(6),
-              child: CustomPaint(
-                painter: LudoBoardPainter(
-                  gameState: dummyGameState,
-                  boardSize: 64,
-                  boardIndex: _selectedBoardIndex,
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        SizedBox(
+          height: 80,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: List.generate(LudoBoardTheme.themes.length, (index) {
+              final isSelected = _selectedBoardIndex == index;
+              return GestureDetector(
+                onTap: () {
+                  setState(() => _selectedBoardIndex = index);
+                },
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  width: 60,
+                  height: 60,
+                  margin: const EdgeInsets.symmetric(horizontal: 4),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: isSelected ? const Color(0xFFFFC233) : Colors.grey.shade300,
+                      width: isSelected ? 3 : 1.5,
+                    ),
+                    boxShadow: isSelected
+                        ? [BoxShadow(color: const Color(0xFFFFC233).withOpacity(0.4), blurRadius: 6)]
+                        : [],
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(5),
+                    child: CustomPaint(
+                      painter: LudoBoardPainter(
+                        gameState: dummyGameState,
+                        boardSize: 60,
+                        boardIndex: index,
+                      ),
+                    ),
+                  ),
                 ),
-              ),
-            ),
+              );
+            }),
           ),
-          Positioned(
-            right: 0,
-            bottom: 0,
-            child: Container(
-              padding: const EdgeInsets.all(2),
-              decoration: const BoxDecoration(
-                color: Colors.white,
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(Icons.touch_app, size: 16, color: Color(0xFFFFC233)),
-            ),
-          ),
-        ],
-      ),
+        ),
+        const SizedBox(height: 6),
+        const Text(
+          'Tap to select board',
+          style: TextStyle(fontSize: 11, color: Colors.grey, fontWeight: FontWeight.bold),
+        ),
+      ],
     );
   }
 
@@ -682,9 +748,11 @@ class _LudoHomeScreenState extends State<LudoHomeScreen>
                   child: TextField(
                     controller: controllers[i],
                     decoration: InputDecoration(
-                      labelText: '${colorName[0].toUpperCase()}${colorName.substring(1)} Player Name',
+                      labelText:
+                          '${colorName[0].toUpperCase()}${colorName.substring(1)} Player Name',
                       border: const OutlineInputBorder(),
-                      prefixIcon: Icon(Icons.person, color: _getThemeColor(color)),
+                      prefixIcon:
+                          Icon(Icons.person, color: _getThemeColor(color)),
                     ),
                   ),
                 );
@@ -732,7 +800,8 @@ class _LudoHomeScreenState extends State<LudoHomeScreen>
       context: context,
       builder: (ctx) {
         return AlertDialog(
-          title: Text('Edit ${colorName[0].toUpperCase()}${colorName.substring(1)} Player Name'),
+          title: Text(
+              'Edit ${colorName[0].toUpperCase()}${colorName.substring(1)} Player Name'),
           content: TextField(
             controller: controller,
             autofocus: true,
@@ -802,7 +871,10 @@ class _LudoHomeScreenState extends State<LudoHomeScreen>
         decoration: BoxDecoration(
           color: fillColor,
           borderRadius: BorderRadius.circular(6),
-          boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 2, offset: Offset(0, 2))],
+          boxShadow: const [
+            BoxShadow(
+                color: Colors.black12, blurRadius: 2, offset: Offset(0, 2))
+          ],
         ),
         child: Center(
           child: Text(
@@ -834,11 +906,17 @@ class _LudoHomeScreenState extends State<LudoHomeScreen>
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(10),
                 border: Border.all(
-                  color: isSelected ? const Color(0xFFFFC233) : Colors.transparent,
+                  color:
+                      isSelected ? const Color(0xFFFFC233) : Colors.transparent,
                   width: 2.5,
                 ),
                 boxShadow: isSelected
-                    ? [const BoxShadow(color: Color(0x55FFC233), blurRadius: 8, spreadRadius: 1)]
+                    ? [
+                        const BoxShadow(
+                            color: Color(0x55FFC233),
+                            blurRadius: 8,
+                            spreadRadius: 1)
+                      ]
                     : [],
               ),
               child: ClipRRect(
@@ -891,16 +969,24 @@ class _LudoHomeScreenState extends State<LudoHomeScreen>
             Expanded(
               child: Row(
                 children: [
-                  Expanded(child: Container(color: const Color(0xFFF0D63D))), // TL Yellow
-                  Expanded(child: Container(color: const Color(0xFF59A95A))), // TR Green
+                  Expanded(
+                      child: Container(
+                          color: const Color(0xFFF0D63D))), // TL Yellow
+                  Expanded(
+                      child: Container(
+                          color: const Color(0xFF59A95A))), // TR Green
                 ],
               ),
             ),
             Expanded(
               child: Row(
                 children: [
-                  Expanded(child: Container(color: const Color(0xFF3B73F2))), // BL Blue
-                  Expanded(child: Container(color: const Color(0xFFF1463A))), // BR Red
+                  Expanded(
+                      child:
+                          Container(color: const Color(0xFF3B73F2))), // BL Blue
+                  Expanded(
+                      child:
+                          Container(color: const Color(0xFFF1463A))), // BR Red
                 ],
               ),
             ),
@@ -915,7 +1001,8 @@ class _LudoHomeScreenState extends State<LudoHomeScreen>
       children: [
         Row(
           children: [
-            const Text('Coins:', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 13)),
+            const Text('Coins:',
+                style: TextStyle(fontWeight: FontWeight.w900, fontSize: 13)),
             const SizedBox(width: 8),
             ...List.generate(4, (index) {
               final val = index + 1;
@@ -937,7 +1024,8 @@ class _LudoHomeScreenState extends State<LudoHomeScreen>
                         child: Center(
                           child: Text(
                             '$val',
-                            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900),
+                            style: const TextStyle(
+                                fontSize: 11, fontWeight: FontWeight.w900),
                           ),
                         ),
                       ),
@@ -946,8 +1034,11 @@ class _LudoHomeScreenState extends State<LudoHomeScreen>
                           right: -2,
                           bottom: -2,
                           child: Container(
-                            decoration: const BoxDecoration(color: Color(0xFF86D63B), shape: BoxShape.circle),
-                            child: const Icon(Icons.check, size: 10, color: Colors.white),
+                            decoration: const BoxDecoration(
+                                color: Color(0xFF86D63B),
+                                shape: BoxShape.circle),
+                            child: const Icon(Icons.check,
+                                size: 10, color: Colors.white),
                           ),
                         ),
                     ],
@@ -956,11 +1047,13 @@ class _LudoHomeScreenState extends State<LudoHomeScreen>
               );
             }),
             const Spacer(),
-            const Text('Cont. Rolling:', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 13)),
+            const Text('Cont. Rolling:',
+                style: TextStyle(fontWeight: FontWeight.w900, fontSize: 13)),
             const SizedBox(width: 4),
             _buildClassicToggleButton(
               _continuousRolling ? 'On' : 'Off',
-              onTap: () => setState(() => _continuousRolling = !_continuousRolling),
+              onTap: () =>
+                  setState(() => _continuousRolling = !_continuousRolling),
             ),
             const SizedBox(width: 4),
             const Icon(Icons.help_outline, color: Color(0xFFFFC233), size: 18),
@@ -969,7 +1062,8 @@ class _LudoHomeScreenState extends State<LudoHomeScreen>
         const SizedBox(height: 8),
         Row(
           children: [
-            const Text('Diff. Level:', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 13)),
+            const Text('Diff. Level:',
+                style: TextStyle(fontWeight: FontWeight.w900, fontSize: 13)),
             const SizedBox(width: 4),
             _buildClassicToggleButton(
               _difficulty.name[0].toUpperCase() + _difficulty.name.substring(1),
@@ -984,11 +1078,13 @@ class _LudoHomeScreenState extends State<LudoHomeScreen>
               },
             ),
             const Spacer(),
-            const Text('Dice Rolling:', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 13)),
+            const Text('Dice Rolling:',
+                style: TextStyle(fontWeight: FontWeight.w900, fontSize: 13)),
             const SizedBox(width: 4),
             _buildClassicToggleButton(
               _diceRollingFling ? 'Fling' : 'Tap',
-              onTap: () => setState(() => _diceRollingFling = !_diceRollingFling),
+              onTap: () =>
+                  setState(() => _diceRollingFling = !_diceRollingFling),
             ),
             const SizedBox(width: 4),
             const Icon(Icons.help_outline, color: Color(0xFFFFC233), size: 18),
@@ -998,7 +1094,8 @@ class _LudoHomeScreenState extends State<LudoHomeScreen>
     );
   }
 
-  Widget _buildClassicToggleButton(String label, {required VoidCallback onTap}) {
+  Widget _buildClassicToggleButton(String label,
+      {required VoidCallback onTap}) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -1019,7 +1116,8 @@ class _LudoHomeScreenState extends State<LudoHomeScreen>
   Widget _buildSpeedRow() {
     return Row(
       children: [
-        const Text('Coin moving speed:', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 13)),
+        const Text('Coin moving speed:',
+            style: TextStyle(fontWeight: FontWeight.w900, fontSize: 13)),
         Expanded(
           child: SliderTheme(
             data: SliderTheme.of(context).copyWith(
@@ -1052,7 +1150,8 @@ class _LudoHomeScreenState extends State<LudoHomeScreen>
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         decoration: const BoxDecoration(
-          border: Border(bottom: BorderSide(color: Color(0xFFFFC233), width: 0.5)),
+          border:
+              Border(bottom: BorderSide(color: Color(0xFFFFC233), width: 0.5)),
         ),
         child: Row(
           children: [
@@ -1095,9 +1194,13 @@ class _LudoHomeScreenState extends State<LudoHomeScreen>
                 height: 22,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: enabled ? const Color(0xFF86D63B) : const Color(0xFFE24E44),
+                  color: enabled
+                      ? const Color(0xFF86D63B)
+                      : const Color(0xFFE24E44),
                   border: Border.all(color: Colors.white, width: 1),
-                  boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 2)],
+                  boxShadow: const [
+                    BoxShadow(color: Colors.black26, blurRadius: 2)
+                  ],
                 ),
                 child: Icon(
                   enabled ? Icons.check : Icons.close,
@@ -1129,13 +1232,13 @@ class _LudoHomeScreenState extends State<LudoHomeScreen>
           _buildStartCoinsIcon(
             isBase: false, // 1 icon
             isSelected: !_rules.startCoinsInBase,
-            onTap: () => _setRules(_rules.copyWith(startCoinsInBase: false)),
+            onTap: () => _applyStartCoinsPreset(false),
           ),
           const SizedBox(width: 12),
           _buildStartCoinsIcon(
             isBase: true, // 6 icon
             isSelected: _rules.startCoinsInBase,
-            onTap: () => _setRules(_rules.copyWith(startCoinsInBase: true)),
+            onTap: () => _applyStartCoinsPreset(true),
           ),
         ],
       ),
@@ -1159,7 +1262,8 @@ class _LudoHomeScreenState extends State<LudoHomeScreen>
               color: const Color(0xFF86D63B),
               borderRadius: BorderRadius.circular(6),
               border: Border.all(
-                color: isSelected ? const Color(0xFFFFC233) : Colors.transparent,
+                color:
+                    isSelected ? const Color(0xFFFFC233) : Colors.transparent,
                 width: 2,
               ),
             ),
@@ -1284,7 +1388,8 @@ class _LudoHomeScreenState extends State<LudoHomeScreen>
     );
   }
 
-  Widget _classicActionButton(String label, Color color, VoidCallback onPressed) {
+  Widget _classicActionButton(
+      String label, Color color, VoidCallback onPressed) {
     return GestureDetector(
       onTap: onPressed,
       child: Container(
@@ -1322,7 +1427,10 @@ class _LudoHomeScreenState extends State<LudoHomeScreen>
               fontSize: 22,
               fontWeight: FontWeight.w900,
               fontStyle: FontStyle.italic,
-              shadows: [Shadow(color: Colors.black45, blurRadius: 2, offset: Offset(1, 1))],
+              shadows: [
+                Shadow(
+                    color: Colors.black45, blurRadius: 2, offset: Offset(1, 1))
+              ],
             ),
           ),
         ),
@@ -1446,6 +1554,25 @@ class _LudoHomeScreenState extends State<LudoHomeScreen>
     setState(() {
       _rules = settings;
     });
+  }
+
+  int get _openingDiceValue => _rules.startCoinsInBase ? 6 : 1;
+
+  int get _penaltyDiceValue => _rules.startCoinsInBase ? 1 : 6;
+
+  void _applyStartCoinsPreset(bool startOnSix) {
+    _setRules(
+      _rules.copyWith(
+        startCoinsInBase: startOnSix,
+        openTokenOnOne: !startOnSix,
+        openTokenOnSix: startOnSix,
+        extraTurnOnOne: !startOnSix,
+        extraTurnOnSix: startOnSix,
+        threeConsecutiveSixesBringCoinOut: true,
+        threeConsecutiveOnesCutOwnCoin: false,
+        skipTurnAfterThreeOnes: false,
+      ),
+    );
   }
 
   Widget _buildGameModeButton(
@@ -1774,7 +1901,9 @@ class _LudoHomeScreenState extends State<LudoHomeScreen>
                     color: const Color(0xFFE24E44),
                     shape: BoxShape.circle,
                     border: Border.all(color: Colors.white, width: 2),
-                    boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 4)],
+                    boxShadow: const [
+                      BoxShadow(color: Colors.black26, blurRadius: 4)
+                    ],
                   ),
                   child: const Icon(Icons.close, color: Colors.white, size: 28),
                 ),
@@ -1786,7 +1915,8 @@ class _LudoHomeScreenState extends State<LudoHomeScreen>
     );
   }
 
-  Widget _settingsRow(String label, bool enabled, {required VoidCallback onTap}) {
+  Widget _settingsRow(String label, bool enabled,
+      {required VoidCallback onTap}) {
     return Container(
       height: 44,
       decoration: BoxDecoration(
@@ -1830,7 +1960,9 @@ class _LudoHomeScreenState extends State<LudoHomeScreen>
       decoration: BoxDecoration(
         color: const Color(0xFFFFC233),
         borderRadius: BorderRadius.circular(10),
-        boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 2, offset: Offset(0, 2))],
+        boxShadow: const [
+          BoxShadow(color: Colors.black12, blurRadius: 2, offset: Offset(0, 2))
+        ],
       ),
       child: Center(
         child: Text(

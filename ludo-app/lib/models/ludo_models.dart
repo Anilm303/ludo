@@ -311,7 +311,7 @@ class GameState {
   bool diceRolled;
   bool canMove;
   GameStatus status;
-  Player? winner;
+  List<String> winnerIds;
   DateTime createdAt;
   DateTime? startedAt;
   DateTime? endedAt;
@@ -327,19 +327,22 @@ class GameState {
     this.diceRolled = false,
     this.canMove = false,
     this.status = GameStatus.waiting,
-    this.winner,
+    List<String>? winnerIds,
     required this.createdAt,
     this.startedAt,
     this.endedAt,
     required this.gameMode,
     this.rules = const LudoRuleSettings(),
     this.selectedTokenId,
-  });
+  }) : winnerIds = winnerIds ?? [];
 
   Player get currentPlayer => players[currentPlayerIndex];
 
   bool get hasGameEnded => status == GameStatus.finished;
   bool get isPlaying => status == GameStatus.playing;
+  Player? get winner => winnerIds.isNotEmpty 
+    ? players.firstWhere((p) => p.id == winnerIds.first, orElse: () => players.first) 
+    : null;
 
   factory GameState.fromJson(Map<String, dynamic> json) {
     return GameState(
@@ -352,9 +355,9 @@ class GameState {
       diceRolled: json['diceRolled'],
       canMove: json['canMove'],
       status: GameStatus.values[json['status']],
-      winner: json['winner'] != null
-          ? Player.fromJson(json['winner'] as Map<String, dynamic>)
-          : null,
+      winnerIds: json['winnerIds'] != null
+          ? List<String>.from(json['winnerIds'])
+          : (json['winner'] != null ? [json['winner']['id']] : []),
       createdAt: DateTime.parse(json['createdAt']),
       startedAt: json['startedAt'] != null
           ? DateTime.parse(json['startedAt'])
@@ -375,7 +378,7 @@ class GameState {
       'diceRolled': diceRolled,
       'canMove': canMove,
       'status': status.index,
-      'winner': winner?.toJson(),
+      'winnerIds': winnerIds,
       'createdAt': createdAt.toIso8601String(),
       'startedAt': startedAt?.toIso8601String(),
       'endedAt': endedAt?.toIso8601String(),
@@ -394,7 +397,7 @@ class GameState {
       diceRolled: diceRolled,
       canMove: canMove,
       status: status,
-      winner: winner?.copy(),
+      winnerIds: List.from(winnerIds),
       createdAt: createdAt,
       startedAt: startedAt,
       endedAt: endedAt,

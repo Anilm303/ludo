@@ -167,18 +167,28 @@ class AIPlayer {
         }
       }
 
-      // Priority 2: Reach home path
-      if (newPos >= BoardConfig.totalPositions - 10) {
-        score += 300.0;
+      // Priority 2: Reach home path or enter home
+      if (token.isInHome) {
+        score += 200.0;
+        // The closer to final cell, the better
+        score += (token.position - BoardConfig.totalPositions) * 20.0;
+      } else if (newPos >= BoardConfig.totalPositions - 5) {
+        score += 350.0;
       }
 
       // Priority 3: Safe zone protection
-      if (LudoGameLogic.isSafePosition(newPos, aiPlayer.color)) {
-        score += 150.0;
+      if (LudoGameLogic.isSafePosition(newPos, aiPlayer.color, rules: rules)) {
+        score += 180.0;
+      }
+      
+      // Avoid leaving safe positions unless for a kill or home
+      if (token.position >= 0 && LudoGameLogic.isSafePosition(token.position, aiPlayer.color, rules: rules)) {
+        score -= 100.0;
       }
 
-      // Priority 4: Block opponent (update score from function)
+      // Priority 4: Block opponent or avoid being killed
       score += _evaluateBlockingOpponents(token, newPos, aiPlayer, allPlayers);
+      score -= _evaluateDanger(newPos, aiPlayer, allPlayers, rules);
 
       // Priority 5: Overall progress
       if (token.position >= 0) {
@@ -188,7 +198,7 @@ class AIPlayer {
           diceValue,
         );
         if (projectedProgress > currentProgress) {
-          score += (projectedProgress - currentProgress) * 2.0;
+          score += (projectedProgress - currentProgress) * 2.5;
         }
       }
 
@@ -210,6 +220,26 @@ class AIPlayer {
     }
 
     return scoredMoves.entries.reduce((a, b) => a.value > b.value ? a : b).key;
+  }
+
+  /// Evaluate danger of being killed at a position
+  double _evaluateDanger(int pos, Player aiPlayer, List<Player> allPlayers, LudoRuleSettings rules) {
+    if (pos < 0 || pos >= BoardConfig.totalPositions) return 0.0;
+    if (LudoGameLogic.isSafePosition(pos, aiPlayer.color, rules: rules)) return 0.0;
+    
+    double danger = 0.0;
+    for (final opponent in allPlayers) {
+      if (opponent.color == aiPlayer.color) continue;
+      for (final oppToken in opponent.tokens) {
+        if (oppToken.position >= 0 && oppToken.position < BoardConfig.totalPositions) {
+          int dist = (pos - oppToken.position + BoardConfig.totalPositions) % BoardConfig.totalPositions;
+          if (dist > 0 && dist <= 6) {
+            danger += (7 - dist) * 20.0; // Very dangerous if opponent is right behind
+          }
+        }
+      }
+    }
+    return danger;
   }
 
   /// Evaluate blocking opponent tokens

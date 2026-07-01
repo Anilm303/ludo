@@ -197,11 +197,18 @@ class LudoGameLogic {
         .where((t) => canTokenBeMoved(t, diceValue, rules: rules))
         .toList();
 
-    // RULE: Must bring a coin out on 1 or 6 based on rules
-    if (LudoGameLogic.canOpenTokenOnDice(diceValue, rules)) {
-      final baseTokens = candidates.where((t) => t.position == -1).toList();
-      if (baseTokens.isNotEmpty) {
-        return baseTokens; // Forced to move tokens out of base
+    if (candidates.isEmpty) return [];
+
+    // Forced opening removed to allow player choice between board coins and base coins
+
+    // RULE: Must cut if cuttable
+    if (rules.mustCutIfCuttable && allPlayers != null) {
+      final capturingTokens = candidates.where((t) => 
+        canTokenCapture(t, diceValue, allPlayers, rules: rules, hasCaptured: player.hasCaptured)
+      ).toList();
+      
+      if (capturingTokens.isNotEmpty) {
+        return capturingTokens; // Forced to capture
       }
     }
 
@@ -472,8 +479,40 @@ class GameController {
     // Prevent rolling multiple times before resolving current roll
     if (gameState.diceRolled) return gameState.diceValue;
 
-    gameState.diceValue = LudoGameLogic.rollDice();
+    final diceValue = LudoGameLogic.rollDice();
+    gameState.diceValue = diceValue;
     gameState.diceRolled = true;
+
+    final rules = gameState.rules;
+
+    // Handle 3 consecutive rolls penalty
+    if (LudoGameLogic.canOpenTokenOnDice(diceValue, rules)) {
+      gameState.currentPlayer.consecutiveSixes++;
+      if (gameState.currentPlayer.consecutiveSixes >= 3) {
+        if (rules.threeConsecutiveSixesBringCoinOut) {
+          _bringCoinOutForPlayer(gameState.currentPlayer, diceValue);
+        }
+        gameState.currentPlayer.consecutiveSixes = 0;
+        // Turn will be ended by provider/AI logic because canMove will be false
+      }
+    } else {
+      gameState.currentPlayer.consecutiveSixes = 0;
+    }
+
+    if (LudoGameLogic.isPenaltyDice(diceValue, rules)) {
+      gameState.currentPlayer.consecutiveOnes++;
+      if (gameState.currentPlayer.consecutiveOnes >= 3) {
+        if (rules.threeConsecutiveOnesCutOwnCoin) {
+          _cutOwnCoin(gameState.currentPlayer);
+        }
+        if (rules.skipTurnAfterThreeOnes) {
+          gameState.currentPlayer.skipTurns += 1;
+        }
+        gameState.currentPlayer.consecutiveOnes = 0;
+      }
+    } else {
+      gameState.currentPlayer.consecutiveOnes = 0;
+    }
 
     // Enable move if there are movable tokens
     final movableTokens = LudoGameLogic.getMovableTokens(
@@ -483,9 +522,15 @@ class GameController {
       rules: gameState.rules,
     );
 
-    gameState.canMove = movableTokens.isNotEmpty;
+    // If 3 sixes happened, player shouldn't be able to move even if they have movable tokens
+    if (LudoGameLogic.canOpenTokenOnDice(diceValue, rules) && 
+        gameState.currentPlayer.consecutiveSixes == 0 && diceValue == (rules.startCoinsInBase ? 6 : 1)) {
+       // This was the 3rd six (since it was reset above)
+       gameState.canMove = false;
+    } else {
+       gameState.canMove = movableTokens.isNotEmpty;
+    }
 
-    // If no movable tokens but dice is 6, allow extra roll later (UI/AI handles)
     onGameStateChanged?.call();
     return gameState.diceValue;
   }
@@ -518,11 +563,22 @@ class GameController {
 
     // Check for win
     if (LudoGameLogic.checkWin(gameState.currentPlayer)) {
-      gameState.winner = gameState.currentPlayer;
-      gameState.status = GameStatus.finished;
-      gameState.endedAt = DateTime.now();
-      onGameEnded?.call(gameState.winner);
-      return true;
+      if (!gameState.winnerIds.contains(gameState.currentPlayer.id)) {
+        gameState.winnerIds.add(gameState.currentPlayer.id);
+      }
+      
+      final activePlayers = gameState.players.where((p) => !p.hasWon).length;
+      if (activePlayers <= 1) {
+        gameState.status = GameStatus.finished;
+        gameState.endedAt = DateTime.now();
+        onGameEnded?.call(gameState.winner);
+      } else {
+        // Player won, but others continue. End turn immediately.
+        gameState.diceRolled = false;
+        gameState.canMove = false;
+        endTurn();
+        return true;
+      }
     }
 
     bool keepTurn = false;
@@ -535,45 +591,19 @@ class GameController {
       keepTurn = true;
     }
 
-    bool forceEndTurn = false;
-
     if (diceValue == 6 && rules.extraTurnOnSix) {
       keepTurn = true;
     }
+    
     if (diceValue == 1 && rules.extraTurnOnOne) {
       keepTurn = true;
     }
 
-    if (LudoGameLogic.canOpenTokenOnDice(diceValue, rules)) {
-      gameState.currentPlayer.consecutiveSixes++;
-
-      if (gameState.currentPlayer.consecutiveSixes >= 3) {
-        if (rules.threeConsecutiveSixesBringCoinOut) {
-          _bringCoinOutForPlayer(gameState.currentPlayer, diceValue);
-        }
-        gameState.currentPlayer.consecutiveSixes = 0;
-        forceEndTurn = true;
-        keepTurn = false;
-      }
+    if (keepTurn) {
+      gameState.diceRolled = false;
+      gameState.canMove = false;
+      gameState.diceValue = 0;
     } else {
-      gameState.currentPlayer.consecutiveSixes = 0;
-    }
-
-    if (LudoGameLogic.isPenaltyDice(diceValue, rules) && gameState.currentPlayer.consecutiveOnes >= 3) {
-      if (rules.threeConsecutiveOnesCutOwnCoin) {
-        _cutOwnCoin(gameState.currentPlayer);
-      }
-      if (rules.skipTurnAfterThreeOnes) {
-        gameState.currentPlayer.skipTurns += 1;
-      }
-      gameState.currentPlayer.consecutiveOnes = 0;
-      forceEndTurn = true;
-    }
-
-    if (forceEndTurn) {
-      keepTurn = false;
-      endTurn();
-    } else if (!keepTurn) {
       endTurn();
     }
 
@@ -586,6 +616,7 @@ class GameController {
 
   void endTurn() {
     gameState.currentPlayer.consecutiveSixes = 0;
+    gameState.currentPlayer.isCurrentTurn = false;
 
     final n = gameState.players.length;
     if (n == 0) return;
@@ -602,6 +633,8 @@ class GameController {
 
       if (candidate.skipTurns > 0) {
         candidate.skipTurns -= 1;
+        // Also ensure their turn flag is false
+        candidate.isCurrentTurn = false;
         continue;
       }
 
@@ -615,18 +648,17 @@ class GameController {
       // no eligible players left -> finish game
       gameState.status = GameStatus.finished;
       gameState.endedAt = DateTime.now();
-      for (final player in gameState.players) {
-        player.isCurrentTurn = false;
-      }
       onGameEnded?.call(gameState.winner);
       onGameStateChanged?.call();
       return;
     }
 
+    // Reset all flags and set current one
     for (final player in gameState.players) {
       player.isCurrentTurn = false;
     }
     gameState.players[gameState.currentPlayerIndex].isCurrentTurn = true;
+
     gameState.diceValue = 0;
     gameState.diceRolled = false;
     gameState.canMove = false;
@@ -650,7 +682,7 @@ class GameController {
     gameState.diceValue = 0;
     gameState.diceRolled = false;
     gameState.canMove = false;
-    gameState.winner = null;
+    gameState.winnerIds.clear();
     gameState.currentPlayerIndex = 0;
 
     for (final player in gameState.players) {
