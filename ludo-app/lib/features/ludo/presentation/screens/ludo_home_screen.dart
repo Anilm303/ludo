@@ -664,49 +664,52 @@ class _LudoHomeScreenState extends State<LudoHomeScreen>
       mainAxisSize: MainAxisSize.min,
       children: [
         SizedBox(
-          height: 80,
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: List.generate(LudoBoardTheme.themes.length, (index) {
-              final isSelected = _selectedBoardIndex == index;
-              return GestureDetector(
-                onTap: () {
-                  setState(() => _selectedBoardIndex = index);
-                },
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  width: 60,
-                  height: 60,
-                  margin: const EdgeInsets.symmetric(horizontal: 4),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: isSelected ? const Color(0xFFFFC233) : Colors.grey.shade300,
-                      width: isSelected ? 3 : 1.5,
+          height: 70,
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            physics: const BouncingScrollPhysics(),
+            child: Row(
+              children: List.generate(LudoBoardTheme.themes.length, (index) {
+                final isSelected = _selectedBoardIndex == index;
+                return GestureDetector(
+                  onTap: () {
+                    setState(() => _selectedBoardIndex = index);
+                  },
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    width: 54,
+                    height: 54,
+                    margin: const EdgeInsets.symmetric(horizontal: 3),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: isSelected ? const Color(0xFFFFC233) : Colors.grey.shade300,
+                        width: isSelected ? 2.5 : 1.2,
+                      ),
+                      boxShadow: isSelected
+                          ? [BoxShadow(color: const Color(0xFFFFC233).withOpacity(0.4), blurRadius: 4)]
+                          : [],
                     ),
-                    boxShadow: isSelected
-                        ? [BoxShadow(color: const Color(0xFFFFC233).withOpacity(0.4), blurRadius: 6)]
-                        : [],
-                  ),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(5),
-                    child: CustomPaint(
-                      painter: LudoBoardPainter(
-                        gameState: dummyGameState,
-                        boardSize: 60,
-                        boardIndex: index,
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(5),
+                      child: CustomPaint(
+                        painter: LudoBoardPainter(
+                          gameState: dummyGameState,
+                          boardSize: 54,
+                          boardIndex: index,
+                        ),
                       ),
                     ),
                   ),
-                ),
-              );
-            }),
+                );
+              }),
+            ),
           ),
         ),
-        const SizedBox(height: 6),
+        const SizedBox(height: 4),
         const Text(
           'Tap to select board',
-          style: TextStyle(fontSize: 11, color: Colors.grey, fontWeight: FontWeight.bold),
+          style: TextStyle(fontSize: 10, color: Colors.grey, fontWeight: FontWeight.bold),
         ),
       ],
     );
