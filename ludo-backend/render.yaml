@@ -1,0 +1,38 @@
+services:
+  - type: web
+    name: chess-backend
+    env: docker
+    plan: free
+    autoDeploy: true
+    healthCheckPath: /api/auth/health
+    envVars:
+      - key: PORT
+        value: 7860
+      - key: FLASK_HOST
+        value: 0.0.0.0
+      - key: FLASK_DEBUG
+        value: "false"
+      - key: ALLOWED_ORIGINS
+        value: "*"
+      - key: MAX_CONTENT_LENGTH
+        value: "104857600"
+      - key: SECRET_KEY
+        generateValue: true
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: MEDIA_STORAGE
+        value: s3
+      - key: MEDIA_PUBLIC_BASE_URL
+        sync: false
+      - key: S3_BUCKET
+        sync: false
+      - key: S3_REGION
+        sync: false
+      - key: S3_ACCESS_KEY_ID
+        sync: false
+      - key: S3_SECRET_ACCESS_KEY
+        sync: false

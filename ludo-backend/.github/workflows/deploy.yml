@@ -1,0 +1,115 @@
+name: Deploy Backend to Hugging Face Space
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: hf-backend-deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    env:
+      HF_USER: ${{ vars.HF_USER || 'Anil1515' }}
+      HF_SPACE: ${{ vars.HF_SPACE || 'chess-baackend' }}
+      HF_REPO_URL: ${{ vars.HF_REPO_URL || format('https://huggingface.co/spaces/{0}/{1}', vars.HF_USER || 'Anil1515', vars.HF_SPACE || 'chess-baackend') }}
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Configure git identity
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Push backend to Hugging Face Space
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN || secrets.HUGGINGFACE_TOKEN || secrets.hf__token }}
+        run: |
+          set -euo pipefail
+
+          workspace_root="${GITHUB_WORKSPACE}"
+
+          echo "Target Hugging Face Space: ${HF_REPO_URL}"
+
+          if [ -z "${HF_TOKEN:-}" ]; then
+            echo "Missing Hugging Face token. Add HF_TOKEN, HUGGINGFACE_TOKEN, or hf__token in GitHub Secrets."
+            exit 1
+          fi
+
+          git config --global url."https://oauth2:${HF_TOKEN}@huggingface.co/".insteadOf "https://huggingface.co/"
+          git lfs install --local
+
+          if ! git ls-remote "${HF_REPO_URL}" HEAD >/dev/null 2>&1; then
+            echo "Hugging Face Space not found or not reachable: ${HF_REPO_URL}"
+            echo "Create the Space first, or update HF_USER / HF_SPACE / HF_REPO_URL to the exact repo URL."
+            exit 1
+          fi
+
+          for attempt in 1 2 3; do
+            echo "Deploy attempt ${attempt}/3"
+
+            cd "${workspace_root}"
+            rm -rf hf-space
+            git clone "${HF_REPO_URL}" hf-space
+
+            cd "${workspace_root}"
+
+            rsync -a --delete \
+              --exclude='.git' \
+              --exclude='.github' \
+              --exclude='hf-space' \
+              --exclude='.env' \
+              --exclude='.env.*' \
+              --exclude='backups' \
+              --exclude='legacy_backups' \
+              --exclude='logs' \
+              --exclude='data' \
+              --exclude='__pycache__' \
+              --exclude='*.pyc' \
+              --exclude='*.pyo' \
+              --exclude='*.db' \
+              --exclude='.pytest_cache' \
+              --exclude='tests/__pycache__' \
+              --exclude='app/**/__pycache__' \
+              "${workspace_root}/" hf-space/
+
+            cd hf-space
+            git remote set-url origin "${HF_REPO_URL}"
+            git remote -v
+            git add -A
+
+            if git diff --cached --quiet; then
+              echo "No backend changes to deploy."
+              exit 0
+            fi
+
+            git commit -m "Deploy backend from GitHub Actions"
+
+            set +e
+            push_output=$(git push origin HEAD:main 2>&1)
+            push_status=$?
+            set -e
+
+            echo "$push_output"
+
+            if [ "$push_status" -eq 0 ]; then
+              exit 0
+            fi
+
+            if echo "$push_output" | grep -qiE 'stale info|fetch first|non-fast-forward|shallow update not allowed'; then
+              echo "Push failed because the Space changed during deploy; retrying with a fresh clone."
+              continue
+            fi
+
+            exit "$push_status"
+          done
+
+          echo "Push failed after 3 attempts."
+          exit 1
